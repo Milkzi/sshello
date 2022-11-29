@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # sshello
 
 省省抢单！！！
@@ -14,3 +15,6 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+=======
+# sshello
+>>>>>>> 10455a5aa2ec292989e92788a5455f6bef5d9592
