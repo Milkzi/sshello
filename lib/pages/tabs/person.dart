@@ -14,14 +14,12 @@ class _nameState extends State<PersonPage> {
     return Center(
         child: Column(
       children: [
-
         ElevatedButton(
             onPressed: () {
-
-              Get.toNamed("/other1", arguments: {"title": "命名路由跳转模式:这是个人页面跳转来的"});
+              Get.toNamed("/other1",
+                  arguments: {"title": "命名路由跳转模式:这是个人页面跳转来的"});
             },
-            child: const Text("命令路由跳转方式")),
-       
+            child: const Text("这是个人详情页面")),
       ],
     ));
   }

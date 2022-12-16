@@ -1,14 +1,19 @@
+import 'dart:async';
 import 'dart:convert';
-
+import 'package:get/get.dart' as homeGet;
 import 'package:dio/dio.dart';
-
+import 'package:audioplayers/audioplayers.dart';
+// import 'package:just_audio/just_audio.dart';
 import 'package:flutter/material.dart';
 import 'package:bruno/bruno.dart';
 import 'package:sshello/setting.dart';
 import 'package:sshello/utils/eventBus.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:sshello/utils/sharedPreferences.dart';
+
 import 'package:web_socket_channel/status.dart' as wschannelstatus;
+import 'package:fluttertoast/fluttertoast.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,8 +24,10 @@ class HomePage extends StatefulWidget {
 
 final _formKey = GlobalKey<FormState>();
 final _form2Key = GlobalKey<FormState>();
-bool runStatus = false;
-IOWebSocketChannel? wschannel;
+bool globalRunStatus = false;
+
+AudioPlayer player = AudioPlayer();
+List sucessfulOrders = [];
 
 class _nameState extends State<HomePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -84,7 +91,8 @@ class FormPage extends StatefulWidget {
   State<FormPage> createState() => _FormPageState();
 }
 
-class _FormPageState extends State<FormPage> {
+class _FormPageState extends State<FormPage>
+    with AutomaticKeepAliveClientMixin {
   final TextEditingController _tokenTextEditingController =
       TextEditingController(); //Token
   final TextEditingController _match_car_typeTextEditingController =
@@ -115,6 +123,13 @@ class _FormPageState extends State<FormPage> {
   List<String> deliver_times = ['即时用车', '预约今天', '预约明天', '预约后天'];
   List<bool> deliver_bool = [true, true, true, true];
 
+  bool runStatus = false;
+  int loopNumber = 0;
+  IOWebSocketChannel? wschannel;
+
+  //按钮点击间隔控制
+  var lastPopTime = DateTime.now();
+  var clickInterval = 2;
   @override
   void initState() {
     // TODO: implement initState
@@ -126,7 +141,7 @@ class _FormPageState extends State<FormPage> {
 
   @override
   Widget build(BuildContext context) {
-    print("FormPage----build");
+    // print("FormPage----build");
     return Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.disabled,
@@ -182,7 +197,15 @@ class _FormPageState extends State<FormPage> {
                           onPressed: () {
                             if (_phone.toString().length == 11) {
                               print("长度11正常,开始拉取执行http");
-                              pullPhoneInfo();
+                              if (lastPopTime == null ||
+                                  DateTime.now().difference(lastPopTime) >
+                                      Duration(seconds: clickInterval)) {
+                                lastPopTime = DateTime.now();
+                                print("允许点击");
+                                pullPhoneInfo();
+                              } else {
+                                print("请勿重复点击");
+                              }
                             }
                           },
                           child: const Text("拉取")),
@@ -415,7 +438,11 @@ class _FormPageState extends State<FormPage> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -443,7 +470,11 @@ class _FormPageState extends State<FormPage> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -484,7 +515,11 @@ class _FormPageState extends State<FormPage> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -672,7 +707,11 @@ class _FormPageState extends State<FormPage> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -697,7 +736,7 @@ class _FormPageState extends State<FormPage> {
                   startRun();
                 });
               },
-              child: Text(runStatus ? "终止程序" : "开始运行"),
+              child: Text(runStatus ? "终止程序 $loopNumber" : "开始运行"),
             ),
           ),
         ]));
@@ -708,10 +747,9 @@ class _FormPageState extends State<FormPage> {
       if (_formKey.currentState != null) {
         if (_formKey.currentState!.validate()) {
           _formKey.currentState!.save();
-          runStatus = true;
 
           print(
-              "${_phone}----${_token}----${_match_car_type}----${_screen_car_type}----${_target_address}----${_screen_address}----${_min_distance}---------${_min_price}----${_time_interval}----");
+              "${_phone}----${_token}----${_match_car_type}----${_screen_car_type}----${_target_address}----${_screen_address}----${_min_distance}----${_max_distance}-----${_min_price}----${_time_interval}----");
           print("开始运行！！！！");
           // print(deliver_bool);
           List new_list = [];
@@ -727,33 +765,57 @@ class _FormPageState extends State<FormPage> {
           // print(new_list);
 
           // print(deliver_times);
-          wschannel = IOWebSocketChannel.connect(MyConfig.wsUri);
+          if (!globalRunStatus) {
+            runStatus = true;
+            globalRunStatus = true;
+            wschannel = IOWebSocketChannel.connect(MyConfig.wsUri);
 
-          wschannel?.sink.add(json.encode({
-            "msg": "first_info",
-            "phone": _phone,
-            "token": _token,
-            "match_car_type": _match_car_type,
-            "screen_car_type": _screen_car_type,
-            "target_address": _target_address,
-            "screen_address": _screen_address,
-            "min_distance": _min_distance,
-            "max_distance": _max_distance,
-            "delivery_time": new_list,
-            "min_price": _min_price,
-            "time_interval": _time_interval,
-          }));
+            wschannel?.sink.add(json.encode({
+              "msg": "first_info",
+              "phone": _phone,
+              "token": _token,
+              "match_car_type": _match_car_type,
+              "screen_car_type": _screen_car_type,
+              "target_address": _target_address,
+              "screen_address": _screen_address,
+              "min_distance": _min_distance,
+              "max_distance": _max_distance,
+              "delivery_time": new_list,
+              "min_price": _min_price,
+              "time_interval": _time_interval,
+            }));
 
-          wschannel?.stream.listen((message) {
-            var msg_map = json.decode(message);
-            bus.fire(
-                WebsocketMSG(level: msg_map["level"], msg: msg_map["msg"]));
-          });
-          print("ws连接成功!!");
+            wschannel?.stream.listen((message) {
+              var msg_map = json.decode(message);
+              if (msg_map["msg"] == "number") {
+                setState(() {
+                  loopNumber++;
+                });
+              } else {
+                bus.fire(WebsocketMSG(
+                    level: msg_map["level"],
+                    msg: msg_map["msg"],
+                    time: msg_map["time"]));
+              }
+            });
+            print("ws连接成功!!");
+          } else {
+            print("全局运行状态已开启");
+            Fluttertoast.showToast(
+                msg: "程序正在运行中...",
+                toastLength: Toast.LENGTH_SHORT,
+                gravity: ToastGravity.CENTER,
+                timeInSecForIosWeb: 1,
+                backgroundColor: Colors.red,
+                textColor: Colors.white,
+                fontSize: 16.0);
+          }
         }
       }
     } else {
       runStatus = false;
+      globalRunStatus = false;
+      loopNumber = 0;
       wschannel?.sink.close(wschannelstatus.goingAway);
       wschannel = null;
       print("form1-----------------11");
@@ -786,6 +848,10 @@ class _FormPageState extends State<FormPage> {
 
     print(_token);
   }
+
+  @override
+  // TODO: implement wantKeepAlive
+  bool get wantKeepAlive => true;
 }
 
 //form2表单
@@ -796,7 +862,8 @@ class FormPage2 extends StatefulWidget {
   State<FormPage2> createState() => _FormPage2State();
 }
 
-class _FormPage2State extends State<FormPage2> {
+class _FormPage2State extends State<FormPage2>
+    with AutomaticKeepAliveClientMixin {
   final TextEditingController _tokenTextEditingController =
       TextEditingController(); //Token
   final TextEditingController _match_car_typeTextEditingController =
@@ -814,9 +881,6 @@ class _FormPage2State extends State<FormPage2> {
   final TextEditingController _min_priceTextEditingController =
       TextEditingController(); //最低价格
 
-  // IOWebSocketChannel? wschannel;
-
-  // bool runStatus = false;
   String _phone = ""; //手机号码
   String _token = ""; //TokenR
   String _match_car_type = ""; //匹配车型
@@ -832,6 +896,16 @@ class _FormPage2State extends State<FormPage2> {
   int _verifyCode = 0;
 
   // String runText = "开始运行";
+  int loopNumber = 0;
+  bool runStatus = false;
+  IOWebSocketChannel? wschannel;
+
+  // 按钮点击间隔控制
+  var lastPopTime = DateTime.now();
+  var clickInterval = 2;
+
+  // 发送验证码按钮状态动态控制
+  bool sendCodeButtonStatus = false;
 
   @override
   void initState() {
@@ -844,10 +918,9 @@ class _FormPage2State extends State<FormPage2> {
 
   @override
   Widget build(BuildContext context) {
-    print("FormPage----build");
+    print("FormPage2----build");
     return Form(
         key: _form2Key,
-        autovalidateMode: AutovalidateMode.disabled,
         child: ListView(children: [
           Container(
             height: 50,
@@ -904,11 +977,11 @@ class _FormPage2State extends State<FormPage2> {
                             if (_phone.toString().length == 11) {
                               print("长度11正常,开始拉取执行http");
                               setState(() {
-                                sendCode();
+                                sendCodeStatus();
                               });
                             }
                           },
-                          child: const Text("发送验证码")),
+                          child: Text(!sendCodeButtonStatus ? "发送验证码" : "已发送")),
                     )),
               ],
             ),
@@ -941,6 +1014,7 @@ class _FormPage2State extends State<FormPage2> {
                       focusedBorder: InputBorder.none,
                       errorStyle: TextStyle(fontSize: 7, letterSpacing: 1),
                     ),
+                    onChanged: (value) => _verifyCode = int.parse(value),
                     onSaved: (value) {
                       if (value != null) {
                         _verifyCode = int.parse(value);
@@ -949,7 +1023,8 @@ class _FormPage2State extends State<FormPage2> {
                     // focusNode: FocusNode(),
                     validator: (String? value) {
                       return value!.trim().isNotEmpty &&
-                              value.trim().length == 4
+                              value.trim().length == 4 &&
+                              int.tryParse(value) != null
                           ? null
                           : "长度应为4位!";
                     },
@@ -1200,7 +1275,11 @@ class _FormPage2State extends State<FormPage2> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空且为数字";
                     },
                   ),
                 ),
@@ -1228,7 +1307,11 @@ class _FormPage2State extends State<FormPage2> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -1269,7 +1352,11 @@ class _FormPage2State extends State<FormPage2> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -1457,7 +1544,11 @@ class _FormPage2State extends State<FormPage2> {
                       }
                     },
                     validator: (String? value) {
-                      return value != null && value.isNotEmpty ? null : "不能为空";
+                      return value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) != null
+                          ? null
+                          : "不能为空、数字类型";
                     },
                   ),
                 ),
@@ -1482,10 +1573,27 @@ class _FormPage2State extends State<FormPage2> {
                   startRun();
                 });
               },
-              child: Text(runStatus ? "终止程序" : "开始运行"),
+              child: Text(runStatus ? "终止程序  $loopNumber" : "开始运行"),
             ),
           ),
         ]));
+  }
+
+  void sendCodeStatus() {
+    if (!sendCodeButtonStatus) {
+      sendCodeButtonStatus = true;
+      sendCode();
+      Timer.periodic(const Duration(seconds: 5), (timer) {
+        timer.cancel();
+        setState(() {
+          sendCodeButtonStatus = false;
+          print("sendCodeButtonStatus改变！！！！！！！！！！！！！！！");
+        });
+      });
+      //TODO
+    } else {
+      return;
+    }
   }
 
   void startRun() {
@@ -1494,10 +1602,9 @@ class _FormPage2State extends State<FormPage2> {
         if (_form2Key.currentState!.validate()) {
           _form2Key.currentState!.save();
 
-          runStatus = true;
-           print("form2开始运行！！！！");
-          print("${_phone}----${_token}----${_match_car_type}----${_screen_car_type}----${_target_address}----${_screen_address}----${_min_distance}---------${_min_price}----${_time_interval}----");
-          print("form2开始运行！！！！");
+          print(
+              "${_phone}----${_token}----${_match_car_type}----${_screen_car_type}----${_target_address}----${_screen_address}----${_min_distance}---------${_min_price}----${_time_interval}----");
+
           // print(deliver_bool);
           List new_list = [];
 
@@ -1509,37 +1616,90 @@ class _FormPage2State extends State<FormPage2> {
             }
           }
           print("form2添加后---------------");
-          // print(new_list);
+          print(new_list);
 
-          // print(deliver_times);
-          wschannel = IOWebSocketChannel.connect(MyConfig.wsUri);
+          print(deliver_times);
+          if (!globalRunStatus) {
+            runStatus = true;
+            globalRunStatus = true;
+            wschannel = IOWebSocketChannel.connect(MyConfig.wsUri);
 
-          wschannel?.sink.add(json.encode({
-            "msg": "first_info",
-            "phone": _phone,
-            "token": _token,
-            "match_car_type": _match_car_type,
-            "screen_car_type": _screen_car_type,
-            "target_address": _target_address,
-            "screen_address": _screen_address,
-            "min_distance": _min_distance,
-            "max_distance": _max_distance,
-            "delivery_time": new_list,
-            "min_price": _min_price,
-            "time_interval": _time_interval,
-          }));
+            wschannel?.sink.add(json.encode({
+              "msg": "first_info",
+              "phone": _phone,
+              "token": _token,
+              "match_car_type": _match_car_type,
+              "screen_car_type": _screen_car_type,
+              "target_address": _target_address,
+              "screen_address": _screen_address,
+              "min_distance": _min_distance,
+              "max_distance": _max_distance,
+              "delivery_time": new_list,
+              "min_price": _min_price,
+              "time_interval": _time_interval,
+            }));
 
-          wschannel?.stream.listen((message) {
-            var msg_map = json.decode(message);
-            bus.fire(
-                WebsocketMSG(level: msg_map["level"], msg: msg_map["msg"]));
-          });
-          print("ws连接成功!!");
+            wschannel?.stream.listen((message) {
+              var msg_map = json.decode(message);
+              if (msg_map["msg"] == "number") {
+                setState(() {
+                  loopNumber++;
+                });
+              } else if (msg_map["msg"] == "锁单成功,停止运行！！！") {
+                Fluttertoast.showToast(
+                    msg: "抢单成功",
+                    toastLength: Toast.LENGTH_SHORT,
+                    gravity: ToastGravity.CENTER,
+                    backgroundColor: Colors.blue,
+                    textColor: Colors.white,
+                    webShowClose: true,
+                    fontSize: 16.0);
+              } else {
+                bus.fire(WebsocketMSG(
+                    level: msg_map["level"],
+                    msg: msg_map["msg"],
+                    time: msg_map["time"]));
+              }
+            });
+            print("ws连接成功!!");
+          } else {
+            print("全局运行状态已开启");
+            // Fluttertoast.showToast(
+            //     msg: "程序正在运行中...",
+            //     toastLength: Toast.LENGTH_SHORT,
+            //     gravity: ToastGravity.CENTER,
+            //     timeInSecForIosWeb: 2,
+            //     backgroundColor: Colors.red,
+            //     textColor: Colors.white,
+            //     fontSize: 16.0);
+
+            Map onMatchOrder = MyConfig.onMatchOrder;
+            playAudio();
+            sucessfulOrders.insert(0, jsonEncode(onMatchOrder));
+            spSet("sucessfulOrders", sucessfulOrders);
+            BrnDialogManager.showConfirmDialog(context,
+                showIcon: true,
+                // iconWidget: Image(image: Image.),
+                title: "抢单成功",
+                cancel: '取消',
+                confirm: '查看详情',
+                message:
+                    "匹配车型：${onMatchOrder['vehicle_description']}\n出发地：${onMatchOrder['from_location']['city']['name']}${onMatchOrder['from_location']['county']['name']}${onMatchOrder['from_location']['town']['name']}${onMatchOrder['from_location']['address']}\n目的地：${onMatchOrder['to_location']['city']['name']}${onMatchOrder['to_location']['county']['name']}${onMatchOrder['to_location']['town']['name']}${onMatchOrder['to_location']['address']}\n价格：${onMatchOrder['price']['price']}\n时间：${onMatchOrder['time']}",
+                barrierDismissible: false, onConfirm: () {
+              stopAudio();
+              homeGet.Get.toNamed("/order/detail",
+                  arguments: {"title": "这是抢单成功数据"});
+            }, onCancel: () {
+              stopAudio();
+              Navigator.of(context).pop();
+            });
+          }
         }
       }
     } else {
+      loopNumber = 0;
       runStatus = false;
-
+      globalRunStatus = false;
       wschannel?.sink.close(wschannelstatus.goingAway);
       wschannel = null;
       print("from2-----------------11");
@@ -1570,8 +1730,28 @@ class _FormPage2State extends State<FormPage2> {
     if (res_data["status"] == 10000) {
       print("登录成功");
       _tokenTextEditingController.text = _token = res_data["token"];
+      print(_token);
     } else {
       print("登录失败");
     }
   }
+
+  void playAudio() async {
+    print(
+        "音乐开始播放---------------------------------------------------------------------------------------------");
+    //player.audioCache.prefix = '';
+    await player.setReleaseMode(ReleaseMode.loop);
+    await player.play(AssetSource('files/aige.mp3'));
+  }
+
+  void stopAudio() async {
+    print(
+        "音乐终止播放---------------------------------------------------------------------------------------------");
+    //player.audioCache.prefix = '';
+    await player.stop();
+  }
+
+  @override
+  // TODO: implement wantKeepAlive
+  bool get wantKeepAlive => true;
 }

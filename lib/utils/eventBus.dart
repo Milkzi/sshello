@@ -5,7 +5,8 @@ EventBus bus = EventBus();
 class WebsocketMSG {
   late int level;
   late String msg;
-  WebsocketMSG({required this.level, required this.msg});
+  late String time;
+  WebsocketMSG({required this.level, required this.msg,required this.time});
 }
 
 class ClearLogMSG {

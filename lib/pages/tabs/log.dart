@@ -21,15 +21,14 @@ class _nameState extends State<ListLogPage> {
     super.initState();
     print("ListLogPage----init执行");
     streamSubscription = bus.on<WebsocketMSG>().listen((event) {
-      print(listWsMsg);
+
       setState(() {
-        print("监听执行。。。");
-        listWsMsg.insert(
-            0,
-            MyListTile(
-                nowTime: DateTime.now().toString().substring(11, 23),
-                wsMsg: event.msg));
+        // print("监听执行。。。");
+        listWsMsg.insert(0, MyListTile(nowTime: event.time, wsMsg: event.msg));
       });
+      if (listWsMsg.length > 2000) {
+        listWsMsg.removeLast();
+      }
     });
 
     clearLogMSGstreamSubscription = bus.on<ClearLogMSG>().listen((event) {
@@ -38,7 +37,6 @@ class _nameState extends State<ListLogPage> {
         print("ClearLogMSG监听执行。。。");
         if (event.msg == "ClearLog") {
           listWsMsg.clear();
-          
         }
       });
     });
@@ -55,8 +53,8 @@ class _nameState extends State<ListLogPage> {
 
   @override
   Widget build(BuildContext context) {
-    print("ListLogPage----build执行");
-    print(listWsMsg);
+
+
     return Container(
       margin: const EdgeInsets.all(15),
       child: ListView.builder(
@@ -83,7 +81,7 @@ class MyListTile extends StatefulWidget {
 class _MyListTilenameState extends State<MyListTile> {
   @override
   Widget build(BuildContext context) {
-    print("MyListTile----build执行");
+    // print("MyListTile----build执行");
     return Container(
         decoration: const BoxDecoration(
             border:

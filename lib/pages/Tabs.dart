@@ -44,6 +44,7 @@ class _MyScaffoldState extends State<MyScaffold> {
   void initState() {
     // TODO: implement initState
     _tagPages = [const HomePage(), const ListLogPage(), const PersonPage()];
+    // _tagPages = [const HomePage(), const ListLogPage()];
 
     super.initState();
     // _pageController = PageController(initialPage: _currentIndex);
@@ -116,7 +117,8 @@ class _MyScaffoldState extends State<MyScaffold> {
         onTap: (index) {
           setState(() {
             print(index);
-            _currentIndex = index;
+             _currentIndex = index;
+
             // _pageController.jumpToPage(_currentIndex);
           });
         },
